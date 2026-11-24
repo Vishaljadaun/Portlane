@@ -1,0 +1,27 @@
+name: Verify Render deployment
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/render-smoke.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SITE: https://portlane.onrender.com
+    steps:
+      - name: Verify the React entry point and configured provider
+        run: |
+          curl --fail --silent --show-error --retry 4 --max-time 90 "$SITE/" -o /tmp/page
+          grep -q '<title>Portlane' /tmp/page
+          curl --fail --silent --show-error "$SITE/api/provider" | jq -e '.provider == "Groq"'
+      - name: Download and scan the public sample
+        run: |
+          curl --fail --silent --show-error "$SITE/storefront.zip" -o /tmp/storefront.zip
+          curl --fail --silent --show-error -F file=@/tmp/storefront.zip "$SITE/api/scans" |
+            jq -e '.scan.files == 4 and (.scan.findings | length == 6)'

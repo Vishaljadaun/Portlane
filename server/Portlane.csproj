@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <UserSecretsId>corewaypoint-local</UserSecretsId>
+    <UserSecretsId>portlane-local</UserSecretsId>
   </PropertyGroup>
   <ItemGroup>
     <Content Include="../web/**/*" Link="wwwroot/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

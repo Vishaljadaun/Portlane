@@ -1,4 +1,4 @@
-# CoreWaypoint
+# Portlane
 An evidence-linked migration planner for classic ASP.NET MVC applications targeting ASP.NET Core on .NET 10. Built with C#, Roslyn, SQLite, and React.
 
 ## Try the sample
@@ -7,7 +7,7 @@ Open web/index.html in a browser for the bundled Storefront report. Search findi
 ## Run live scans
 Install the .NET 10 SDK. From the repository root run:
 
-    dotnet run --project server/CoreWaypoint.csproj --urls http://localhost:5100
+    dotnet run --project server/Portlane.csproj --urls http://localhost:5100
 
 Open http://localhost:5100, upload web/storefront.zip, and inspect its six findings. The server stores findings, short excerpts, and validated plans in a local SQLite database. Upload and generation are separate actions. For local inference, install Ollama, run ollama pull qwen3.5:9b and start Ollama. Under Migration plan, select Generate migration plan.
 

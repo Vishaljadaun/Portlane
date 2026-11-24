@@ -6,6 +6,7 @@
     <UserSecretsId>portlane-local</UserSecretsId>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="../web/**/*" Link="wwwroot/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
   </ItemGroup>

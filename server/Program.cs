@@ -4,7 +4,7 @@ using System.Text.Json;
 using System.Xml;
 using System.Threading.RateLimiting;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions {Args=args, WebRootPath=Path.Combine(AppContext.BaseDirectory,"wwwroot")});
 builder.WebHost.ConfigureKestrel(k=>k.Limits.MaxRequestBodySize=12_000_000);
 builder.Services.AddHttpClient<Planner>(c=>c.Timeout=TimeSpan.FromSeconds(100));
 builder.Services.AddRateLimiter(o=>{

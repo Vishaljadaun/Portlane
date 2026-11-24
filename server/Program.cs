@@ -41,6 +41,8 @@ api.MapPost("/scans", async (HttpRequest request,CancellationToken ct)=>{
         cmd.CommandText="INSERT INTO reports(id,scan) VALUES($id,$scan)";
         cmd.Parameters.AddWithValue("$id",id); cmd.Parameters.AddWithValue("$scan",JsonSerializer.Serialize(scan)); cmd.ExecuteNonQuery();
         return Results.Ok(new {id,scan});
+    } catch(ScanLimitException ex) {
+        return Results.BadRequest(ex.Message);
     } catch(Exception ex) when(ex is InvalidDataException or XmlException or NotSupportedException or ArgumentException) {
         return Results.BadRequest("Unreadable archive or invalid source. Use C# source and valid project XML within the upload limits.");
     }

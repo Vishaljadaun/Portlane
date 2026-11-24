@@ -1,7 +1,11 @@
 const html = htm.bind(React.createElement);
-const {useState, useRef, useEffect} = React;
+const {useState, useEffect} = React;
 async function api(path, options) {
-  const response = await fetch(path, options);
+  let response;
+  try { response = await fetch(path, options); }
+  catch { throw Error('Could not reach Portlane. Open the live site in your browser and retry.'); }
+  if (response.status === 413) throw Error('This ZIP exceeds the upload limit. Choose a source-only ZIP up to 10 MB.');
+  if (response.status === 429) throw Error('Too many requests. Wait a minute, then retry.');
   if (!response.headers.get('content-type')?.includes('json')) throw Error('Live scans need the Portlane .NET server. The sample report works offline.');
   const data = await response.json();
   if (!response.ok) throw Error(typeof data === 'string' ? data : data.detail || 'Request failed. Please retry.');
@@ -18,7 +22,7 @@ function App() {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [provider, setProvider] = useState(null);
-  const input = useRef(null);
+  const [notice, setNotice] = useState('');
   useEffect(()=>{api('/api/provider').then(setProvider).catch(()=>{});},[]);
   const findings = scan.findings.filter(f=>(filter==='All categories' || f.category===filter) &&
     (f.path+' '+f.title+' '+f.id).toLowerCase().includes(search.toLowerCase()));
@@ -26,15 +30,21 @@ function App() {
     select(f); setSearch(''); setFilter('All categories'); setTab('Findings');
     requestAnimationFrame(()=>document.getElementById('evidence')?.scrollIntoView({block:'nearest'}));
   }
-  async function upload(event) {
-    const file=event.target.files[0]; event.target.value='';
-    if(!file) return;
-    setError('');
-    if (!file.name.toLowerCase().endsWith('.zip') || file.size>10000000){setError('Select a ZIP archive up to 10 MB.');return;}
-    setBusy('Scanning source…');
+  async function scanZip(file) {
+    setError(''); setNotice('');
+    if (file && (!file.size || file.size > 10000000)) {
+      setError('Choose a nonempty ZIP up to 10 MB. Exclude bin, obj, packages and node_modules when creating it.'); return;
+    }
+    setBusy('Scanning ' + (file?.name || 'storefront.zip') + '…');
     try {
+      if (!file) {
+        const response = await fetch('storefront.zip');
+        if (!response.ok) throw Error('Could not download the sample ZIP. Please retry.');
+        file = new File([await response.blob()], 'storefront.zip', {type:'application/zip'});
+      }
       const form=new FormData(); form.append('file',file);
       const result=await api('/api/scans',{method:'POST',body:form});
+      setNotice('Scanned ' + file.name + ' · ' + result.scan.files + ' source files · ' + result.scan.findings.length + ' findings');
       setScan(result.scan);setId(result.id);setPlan(null);select(result.scan.findings[0]);setTab('Findings');setFilter('All categories');setSearch('');
     } catch(e){setError(e.message);} finally{setBusy('');}
   }
@@ -47,8 +57,8 @@ function App() {
     const url=URL.createObjectURL(blob), a=document.createElement('a');a.href=url;a.download=scan.name+'-migration.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
   return html`<header><div className="brand"><i className="mark" aria-hidden="true"></i>Portlane</div><span className="headerline"></span><span>Migration workspace</span><div className="provider">${provider?provider.provider:'Sample workspace'}</div></header>
-  <main><section className="hero"><div><p className="eyebrow">ASP.NET MODERNIZATION</p><h1>Migration workspace<span>.</span></h1><p>Explore legacy dependencies and build an evidence-backed migration plan.</p><div className="actions"><button className="primary" disabled=${!!busy} onClick=${()=>input.current.click()}>＋ Upload project</button><a href="storefront.zip" download>Download sample ZIP</a></div><input hidden type="file" accept=".zip" ref=${input} onChange=${upload}/></div><div className="art" aria-hidden="true"><i></i><i></i><i></i><b>.NET</b></div></section>
-  ${(busy || error) && html`<div role="status" className="notice">${busy || error}</div>`}
+  <main><section className="hero"><div><p className="eyebrow">ASP.NET MODERNIZATION</p><h1>Migration workspace<span>.</span></h1><p>Explore legacy dependencies and build an evidence-backed migration plan.</p><div className="actions"><label className="primary upload-control">Upload ZIP<input type="file" aria-label="Upload ZIP" disabled=${!!busy} onChange=${event=>{const file=event.currentTarget.files[0];event.currentTarget.value='';if(file)scanZip(file);}}/></label><button className="sample-control" disabled=${!!busy} onClick=${()=>scanZip(null)}>Scan sample ZIP</button><a href="storefront.zip" download>Download sample ZIP</a></div><small>Source ZIP · up to 10 MB</small></div><div className="art" aria-hidden="true"><i></i><i></i><i></i><b>.NET</b></div></section>
+  ${(busy || error || notice) && html`<div role="status" className="notice">${busy || error || notice}</div>`}
   <section className="summary"><div><p className="eyebrow">${id?'PROJECT':'SAMPLE PROJECT'}</p><h2>${scan.name}</h2></div><div><span>Source files</span><strong>${scan.files}</strong></div><div><span>Findings</span><strong>${scan.findings.length}</strong></div><div><span>Migration target</span><strong>.NET 10</strong></div></section>
   <nav aria-label="Report views">${['Findings','Migration plan'].map(t=>html`<button key=${t} aria-pressed=${t===tab} onClick=${()=>setTab(t)}>${t}</button>`)}<button className="export" onClick=${exportPlan}>Export report ↓</button></nav>
   ${tab==='Findings'?html`<section className="split"><article><div className="heading"><h2>Source findings</h2><span className="number">${findings.length}</span></div><div className="filters"><input aria-label="Search findings" placeholder="Search findings or files" value=${search} onInput=${e=>setSearch(e.target.value)}/><select aria-label="Filter by category" value=${filter} onChange=${e=>setFilter(e.target.value)}>${['All categories',...new Set(scan.findings.map(f=>f.category))].map(c=>html`<option key=${c}>${c}</option>`)}</select></div><div className="list">${findings.map(f=>html`<button className=${'row '+(selected?.id===f.id?'current':'')} key=${f.id} onClick=${()=>select(f)}><span className="glyph" aria-hidden="true">${f.category==='Configuration'?'⚙':'{ }'}</span><span><b>${f.title}</b><small>${f.path} · L${f.line}</small></span><em>${f.category}</em></button>`)}${!findings.length && html`<p>No matching findings.</p>`}</div></article>

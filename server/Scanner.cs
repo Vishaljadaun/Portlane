@@ -7,12 +7,14 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 record Finding(string Id, string Title, string Category, string Path, int Line, string Excerpt);
 record Scan(string Name, int Files, List<Finding> Findings);
 
+class ScanLimitException(string message) : Exception(message) { }
+
 static class Scanner
 {
     public static Scan Read(Stream stream, string name)
     {
         using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
-        if (archive.Entries.Count > 1500) throw new InvalidDataException("Limit the archive to 1,500 entries.");
+        if (archive.Entries.Count > 1500) throw new ScanLimitException("Limit the archive to 1,500 entries.");
         var findings = new List<Finding>();
         int files = 0;
         long total = 0;
@@ -24,7 +26,7 @@ static class Scanner
             string file = Path.GetFileName(path).ToLowerInvariant();
             if (ext is not (".cs" or ".csproj") && file is not ("web.config" or "packages.config")) continue;
             total += entry.Length;
-            if (entry.Length > 512_000 || total > 8_000_000) throw new InvalidDataException("Source limit exceeded (512 KB per file, 8 MB total).");
+            if (entry.Length > 512_000 || total > 8_000_000) throw new ScanLimitException("Source limit exceeded (512 KB per file, 8 MB total).");
             using var input = entry.Open();
             using var buffer = new MemoryStream();
             var chunk = new byte[8192];
@@ -41,7 +43,7 @@ static class Scanner
             var lines = source.ReplaceLineEndings("\n").Split('\n');
             void Add(string title, string category, int line, string? safeExcerpt = null)
             {
-                if (findings.Count >= 300) throw new InvalidDataException("More than 300 findings. Upload a smaller project.");
+                if (findings.Count >= 300) throw new ScanLimitException("More than 300 findings. Upload a smaller project.");
                 var excerpt = safeExcerpt ?? lines[line-1].Trim();
                 findings.Add(new($"F{findings.Count+1:D3}", title, category, path, line, excerpt[..Math.Min(excerpt.Length, 240)]));
             }
@@ -73,7 +75,7 @@ static class Scanner
                 }
             }
         }
-        if (files == 0) throw new InvalidDataException("No supported C# or project files found.");
+        if (files == 0) throw new ScanLimitException("No supported C# or project files found.");
         return new(name, files, findings);
     }
 }

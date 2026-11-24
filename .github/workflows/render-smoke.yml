@@ -25,3 +25,8 @@ jobs:
           curl --fail --silent --show-error "$SITE/storefront.zip" -o /tmp/storefront.zip
           curl --fail --silent --show-error -F file=@/tmp/storefront.zip "$SITE/api/scans" |
             jq -e '.scan.files == 4 and (.scan.findings | length == 6)'
+      - uses: actions/checkout@v4
+      - name: Test ZIP selection in mobile Chromium
+        run: |
+          npm install --prefix "$RUNNER_TEMP/browser" --no-audit --no-fund playwright-core@1.57.0
+          NODE_PATH="$RUNNER_TEMP/browser/node_modules" node tests/upload-browser.cjs

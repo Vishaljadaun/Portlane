@@ -1,0 +1,20 @@
+name: Build and smoke test
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet publish server/CoreWaypoint.csproj -c Release -o /tmp/corewaypoint
+      - name: Verify sample scan and web entry point
+        shell: bash
+        run: |
+          set -eu
+          dotnet /tmp/corewaypoint/CoreWaypoint.dll --urls http://127.0.0.1:5100 > /tmp/corewaypoint.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" || true; cat /tmp/corewaypoint.log' EXIT
+          curl --retry 20 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:5100/ | grep CoreWaypoint
+          curl -fsS -F file=@web/storefront.zip http://127.0.0.1:5100/api/scans | jq -e '.scan.files == 4 and (.scan.findings | length == 6)'

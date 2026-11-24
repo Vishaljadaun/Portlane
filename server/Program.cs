@@ -12,7 +12,7 @@ builder.Services.AddRateLimiter(o=>{
     o.AddFixedWindowLimiter("api", p=>{p.PermitLimit=30; p.Window=TimeSpan.FromMinutes(1); p.QueueLimit=0;});
 });
 var app=builder.Build();
-var dbPath=builder.Configuration["Storage:Path"] ?? "portlane.db";
+var dbPath=builder.Configuration["Storage:Path"] ?? "corewaypoint.db";
 SqliteConnection Open(){
     var db=new SqliteConnection(new SqliteConnectionStringBuilder{DataSource=dbPath}.ToString());
     db.Open();

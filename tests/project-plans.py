@@ -16,7 +16,15 @@ requests_seen = []
 
 class Provider(BaseHTTPRequestHandler):
     def do_POST(self):
-        payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
+            body = bytearray()
+            while size := int(self.rfile.readline().split(b";")[0].strip(), 16):
+                body.extend(self.rfile.read(size))
+                self.rfile.read(2)
+            self.rfile.readline()
+        else:
+            body = self.rfile.read(int(self.headers["Content-Length"]))
+        payload = json.loads(body)
         tasks = json.loads(payload["messages"][1]["content"])
         requests_seen.append(tasks)
         # Unrecognized tasks and injected prose must never enter the displayed plan.

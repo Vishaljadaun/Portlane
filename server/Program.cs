@@ -53,12 +53,13 @@ api.MapPost("/scans/{id}/plan",async(string id,Planner planner,CancellationToken
     Scan scan;
     using(var row=cmd.ExecuteReader()){
         if(!row.Read()) return Results.NotFound();
-        if(!row.IsDBNull(1)) return Results.Ok(JsonSerializer.Deserialize<MigrationPlan>(row.GetString(1)));
+        if(!row.IsDBNull(1) && JsonSerializer.Deserialize<MigrationPlan>(row.GetString(1)) is {Version: 2} cached)
+            return Results.Ok(cached);
         scan=JsonSerializer.Deserialize<Scan>(row.GetString(0))!;
     }
     try {
         var plan=await planner.Generate(scan,ct);
-        cmd.CommandText="UPDATE reports SET plan=COALESCE(plan,$plan) WHERE id=$id RETURNING plan";
+        cmd.CommandText="UPDATE reports SET plan=CASE WHEN json_extract(plan,'$.Version')=2 THEN plan ELSE $plan END WHERE id=$id RETURNING plan";
         cmd.Parameters.AddWithValue("$plan",JsonSerializer.Serialize(plan));
         return Results.Ok(JsonSerializer.Deserialize<MigrationPlan>((string)cmd.ExecuteScalar()!));
     } catch(Exception ex) when(ex is HttpRequestException or TaskCanceledException or InvalidOperationException or JsonException or KeyNotFoundException or IndexOutOfRangeException){

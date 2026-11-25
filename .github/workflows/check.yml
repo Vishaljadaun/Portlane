@@ -18,3 +18,4 @@ jobs:
           trap 'kill "$server_pid" || true; cat /tmp/portlane.log' EXIT
           curl --retry 20 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:5100/ | grep Portlane
           curl -fsS -F file=@web/storefront.zip http://127.0.0.1:5100/api/scans | jq -e '.scan.files == 4 and (.scan.findings | length == 6)'
+          python3 tests/project-plans.py

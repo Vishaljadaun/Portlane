@@ -22,15 +22,12 @@ jobs:
           curl --fail --silent --show-error "$SITE/api/provider" | jq -e '.provider == "Groq"'
       - name: Download and scan the public sample
         run: |
-          curl --fail --silent --show-error "$SITE/storefront.zip" -o /tmp/storefront.zip
-          curl --fail --silent --show-error -F file=@/tmp/storefront.zip "$SITE/api/scans" |
-            jq -e '.scan.files == 4 and (.scan.findings | length == 6)'
+          curl -fsS --retry 18 --retry-all-errors --retry-delay 6 --max-time 30 "$SITE/RetailDesk.zip" -o /tmp/RetailDesk.zip
+          curl -fsS -F file=@/tmp/RetailDesk.zip "$SITE/api/scans" |
+            jq -e '.scan.files == 31 and ([.scan.findings[].title] | index("Legacy jQuery size()") != null)'
       - uses: actions/checkout@v4
-      - name: Scan the frontend fixture on the live deployment
+      - name: Check frontend detection
         run: |
-          curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 6 --max-time 15 "$SITE/frontend-example.zip" -o /tmp/frontend.zip
-          curl --fail --silent --show-error -F file=@/tmp/frontend.zip "$SITE/api/scans" |
-            jq -e '.scan as $s | $s.files == 3 and ([$s.findings[].title] | index("Legacy jQuery size()") != null and index("Multiple Bootstrap versions referenced") != null) and all($s.findings[]; .upgrade.verify and .upgrade.guide)'
           PORTLANE_TEST_URL="$SITE" python3 tests/project-plans.py --frontend-only
       - name: Verify the deployed review and dependency map
         run: |

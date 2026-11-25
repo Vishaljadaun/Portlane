@@ -2,14 +2,14 @@
 An evidence-linked migration planner for legacy .NET projects targeting .NET 10. Built with C#, Roslyn, SQLite, and React.
 
 ## Try the sample
-Open web/index.html in a browser for the bundled Storefront report. Search findings, open source evidence, inspect the example plan, and export JSON. The sample plan is hand-authored. Download the sample ZIP to test the scanner when the server is running.
+Open web/index.html in a browser for the bundled RetailDesk report. Search findings, open source evidence, inspect the example plan, and export JSON. The sample report and plan were captured from a RetailDesk scan. Download the sample ZIP to test the scanner when the server is running.
 
 ## Run live scans
 Install the .NET 10 SDK. From the repository root run:
 
     dotnet run --project server/Portlane.csproj --urls http://localhost:5100
 
-Open http://localhost:5100, upload web/storefront.zip, and inspect its six findings. The server stores findings, short excerpts, and validated plans in a local SQLite database. Upload and generation are separate actions. For local inference, install Ollama, run ollama pull qwen3.5:9b and start Ollama. Under Migration plan, select Generate migration plan.
+Open http://localhost:5100, select Scan sample ZIP or upload web/RetailDesk.zip to inspect the .NET and frontend findings. The server stores findings, short excerpts, and validated plans in a local SQLite database. Upload and generation are separate actions. For local inference, install Ollama, run ollama pull qwen3.5:9b and start Ollama. Under Migration plan, select Generate migration plan.
 
 For Groq:
     dotnet user-secrets set "AI:GroqApiKey" "YOUR_KEY" --project server

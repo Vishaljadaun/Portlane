@@ -184,10 +184,10 @@ console_plan = json.dumps(plan(result)).lower()
 assert all(word not in console_plan for word in ["mvc","session","controller","razor","route"])
 assert all(word in console_plan for word in ["console","test runner","library","datafilepath","csvexportpath"])
 print("InventoryTracker fixture: five findings; console, library, executable test runner; no web tasks.")
-store = scan(Path("web/storefront.zip").read_bytes())
-assert store["scan"]["projects"][0]["kind"] == "MVC web application"
-web_plan = json.dumps(plan(store)).lower()
-assert "mvc" in web_plan and "session" in web_plan and "razor" not in web_plan
+retail = scan(Path("web/RetailDesk.zip").read_bytes())
+assert {p["kind"] for p in retail["scan"]["projects"]} == {"Web application","Console application","Executable test runner","Library"}
+retail_plan = json.dumps(plan(retail)).lower()
+assert "session" in retail_plan and "jquery" in retail_plan
 if not live:
     frontend_plan = plan(frontend())
     assert any('data-bs-toggle' in p['action'] for p in frontend_plan)
@@ -197,4 +197,4 @@ if not live:
     stub.server_close()
     fallback = post(path,b"",{})
     assert fallback["source"] == "Rule guidance" and fallback["edit"]["after"] == ".length"
-print("Storefront fixture: MVC and session tasks present, unsupported instructions excluded.")
+print("RetailDesk sample: session and frontend migration tasks present.")

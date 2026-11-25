@@ -28,9 +28,9 @@ class Provider(BaseHTTPRequestHandler):
         tasks = json.loads(payload["messages"][1]["content"])
         requests_seen.append(tasks)
         # Unrecognized tasks and injected prose must never enter the displayed plan.
-        steps = [{"id": "unknown", "check": 0}, {"id": tasks[-1]["Id"], "check": 1,
+        steps = [] if isinstance(tasks,dict) else [{"id": "unknown", "check": 0}, {"id": tasks[-1]["Id"], "check": 1,
                  "action": "Install a Razor views project"}]
-        body = json.dumps({"message": {"content": json.dumps({"steps": steps})}}).encode()
+        body = json.dumps({"message": {"content": json.dumps({"steps": steps} if steps else {"explanation":"This call counts matching items.", "assumption":"Verify the jQuery version."})}}).encode()
         self.send_response(200)
         self.end_headers()
         self.wfile.write(body)
@@ -120,6 +120,55 @@ export const Cart = () => <span className="sr-only">Cart</span>;""",
     print(f"Frontend ZIP: {report['files']} files, {len(items)} findings. Mixed versions, source lines, upgrade guidance and independent project scope verified.")
     return result
 
+def review_fixture():
+    files = {
+        "Shop/Web.csproj": "<Project/>",
+        "Shop/package.json": '{"dependencies":{"jquery":"3.7.1"}}',
+        "Shop/Views/Cart/Edit.cshtml": '@Html.Partial("_Items")',
+        "Shop/Views/Shared/_Items.cshtml": "<p>Items</p>",
+        "Shop/Views/_ViewStart.cshtml": '@{ Layout = "~/Views/Shared/_Layout.cshtml"; }',
+        "Shop/Views/Shared/_Layout.cshtml": '@Scripts.Render("~/bundles/cart")',
+        "Shop/App_Start/BundleConfig.cs": 'class App { void Register() { bundles.Add(new ScriptBundle("~/bundles/cart").Include("~/Scripts/jquery-{version}.js", "~/Scripts/cart.js")); } }',
+        "Shop/Scripts/jquery-3.7.1.js": "/*! jQuery v3.7.1 */",
+        "Shop/Scripts/cart.js": "let itemCount = $('.cart').size();",
+        "Shop/node_modules/big.js": "ignored",
+        "Shop/broken.csproj": "<Project>",
+        "Shop/unreadable.js": b"\x80",
+        "Shop/large.js": " " * 513000,
+        "Shop/logo.svg": "<svg/>",
+    }
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for name,data in files.items():
+            z.writestr(name,data)
+    result = scan(out.getvalue())
+    doc = result["scan"]
+    coverage = {f["path"]:f["status"] for f in doc["coverage"]}
+    assert len(coverage) == len(files), coverage
+    assert coverage["Shop/logo.svg"] == coverage["Shop/large.js"] == "Skipped"
+    assert coverage["Shop/unreadable.js"] == coverage["Shop/broken.csproj"] == "Unreadable"
+    assert coverage["Shop/Scripts/jquery-3.7.1.js"] == "Limited"
+    edges = {(e["from"],e["to"]) for e in doc["usage"]["edges"]}
+    bundle = "Shop/Web.csproj · ~/bundles/cart"
+    for edge in [("Shop/Views/Cart/Edit.cshtml","Shop/Views/Shared/_Items.cshtml"),
+                 ("Shop/Views/Cart/Edit.cshtml","Shop/Views/_ViewStart.cshtml"),
+                 ("Shop/Views/_ViewStart.cshtml","Shop/Views/Shared/_Layout.cshtml"),
+                 ("Shop/Views/Shared/_Layout.cshtml",bundle),
+                 (bundle,"Shop/Scripts/jquery-3.7.1.js"),(bundle,"Shop/Scripts/cart.js")]:
+        assert edge in edges, (edge,edges)
+    finding = next(f for f in doc["findings"] if f["title"] == "Legacy jQuery size()")
+    assert finding["assessment"]["impact"] == "High" and finding["context"]
+    path = "/api/scans/"+result["id"]+"/findings/"+finding["id"]+"/review"
+    review = post(path,b"",{})
+    assert review["edit"] == {"before":".size()", "after":".length"} and review["verify"]
+    assert review["source"] in ("Groq","Rule guidance") if live else review["source"] == "Ollama"
+    print("Validated file coverage, ordered MVC references, triage and finding preview using", review["source"])
+    return path
+
+if "--review-only" in sys.argv:
+    review_fixture()
+    sys.exit(0)
+
 if "--frontend-only" in sys.argv:
     frontend()
     sys.exit(0)
@@ -143,5 +192,9 @@ if not live:
     frontend_plan = plan(frontend())
     assert any('data-bs-toggle' in p['action'] for p in frontend_plan)
     assert len(requests_seen) == 3
+    path = review_fixture()
     stub.shutdown()
+    stub.server_close()
+    fallback = post(path,b"",{})
+    assert fallback["source"] == "Rule guidance" and fallback["edit"]["after"] == ".length"
 print("Storefront fixture: MVC and session tasks present, unsupported instructions excluded.")

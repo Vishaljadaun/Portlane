@@ -9,6 +9,8 @@ sealed partial class FrontendScanner(Dictionary<string, FrontendRelease> release
     const string BootstrapGuide = "https://getbootstrap.com/docs/5.3/migration/";
     const string JsGuide = "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/substr";
     record Reference(string Path, int Line, string Package, string Spec, Version? Exact);
+    public UsageBuilder Usage { get; } = new();
+    readonly HashSet<string> badManifests = [];
     readonly List<Reference> references = [];
     readonly List<Finding> issues = [];
     readonly HashSet<string> manifests = new(StringComparer.OrdinalIgnoreCase);
@@ -32,10 +34,10 @@ sealed partial class FrontendScanner(Dictionary<string, FrontendRelease> release
     static string Blank(Match m) => Regex.Replace(m.Value, @"[^\n]", " ");
     static readonly HashSet<string> Widgets = ["modal","collapse","dropdown","tab","pill","tooltip","popover","button","buttons","carousel","alert"];
 
-    void Issue(string path, int line, string title, string category, string evidence, string action, string verify, string guide)
+    void Issue(string path, int line, string title, string category, string evidence, string action, string verify, string guide, Replacement? preview = null)
     {
         if (issues.Count >= 300) throw new ScanLimitException("More than 300 findings. Upload a smaller project.");
-        issues.Add(new("", title, category, path, line, evidence, Upgrade: new(action, verify, guide)));
+        issues.Add(new("", title, category, path, line, evidence, Upgrade: new(action, verify, guide), Preview: preview));
     }
 
     public void Dependency(string path, int line, string? name, string? spec)
@@ -49,7 +51,20 @@ sealed partial class FrontendScanner(Dictionary<string, FrontendRelease> release
         references.Add(new(path, line, name, spec, exact?.Build >= 0 && exact.Revision == -1 ? exact : null));
     }
 
-    public void Inspect(string path, string file, string ext, string source)
+    public (string, string) InspectWithCoverage(string path, string file, string ext, string source)
+    {
+        Inspect(path, file, ext, source);
+        if (badManifests.Contains(path)) return ("Unreadable", "Invalid dependency manifest");
+        if (IsAssetOnly(path, file, ext, source)) return ("Limited", "Asset version metadata only");
+        return ("Analyzed", JsonFiles.Contains(file) ? "Dependency declarations checked" : "Source rules checked");
+    }
+
+    static bool IsAssetOnly(string path, string file, string ext, string source) =>
+        ext == ".css" || Asset.IsMatch(file) || Banner.IsMatch(source[..Math.Min(2048, source.Length)]) ||
+        path.Split('/').Contains("vendor", StringComparer.OrdinalIgnoreCase) || file.Contains(".min.") ||
+        file is "bootstrap.js" or "jquery.js" or "bootstrap.bundle.js";
+
+    void Inspect(string path, string file, string ext, string source)
     {
         var lines = new List<int> {0};
         for (int i = 0; i < source.Length; i++) if (source[i] == '\n') lines.Add(i+1);
@@ -98,9 +113,16 @@ sealed partial class FrontendScanner(Dictionary<string, FrontendRelease> release
                     "live" or "die" => ("Attach delegated .on() or .off() to a stable ancestor with the original event and target selector.", "Test existing and dynamically inserted elements, then remove the handler."),
                     _ => ("Confirm the receiver is a string. Replace substr(start, length) with slice after mapping length to an end index and handling negative inputs.", "Compare omitted length, zero length and negative arguments with the old output.")
                 };
+                Replacement? preview = null;
+                if (api.Value is "size" or "now") {
+                    var token = api.Value == "size" ? @"\.\s*size\s*\(\s*\)" : @"(?:jQuery|\$)\s*\.\s*now\s*\(\s*\)";
+                    var edit = Regex.Match(script[m.Index..Math.Min(script.Length, m.Index+m.Length+80)], token);
+                    if (edit.Success && m.Index+edit.Index <= api.Index && api.Index < m.Index+edit.Index+edit.Length)
+                        preview = new(edit.Value, api.Value == "size" ? ".length" : "Date.now()");
+                }
                 bool js = api.Value == "substr";
                 Issue(path, Line(offset+api.Index), js ? "Review JavaScript substr()" : $"Legacy jQuery {api.Value}()", js ? "JavaScript" : "jQuery",
-                    script.Substring(api.Index, api.Length)+"()", action, verify, js ? JsGuide : JQueryGuide);
+                    script.Substring(api.Index, api.Length)+"()", action, verify, js ? JsGuide : JQueryGuide, preview);
             }
         }
         string? jsxCode = null;
@@ -110,6 +132,7 @@ sealed partial class FrontendScanner(Dictionary<string, FrontendRelease> release
             jsxCode = MaskJs.Replace(source, Blank);
         }
         string markup = MaskMarkup.Replace(source, Blank);
+        if (ext == ".cshtml") Usage.Views(path, markup, Line);
         int afterScript = 0;
         foreach (Match tag in Tag.Matches(markup))
         {
@@ -121,6 +144,7 @@ sealed partial class FrontendScanner(Dictionary<string, FrontendRelease> release
                 var value = a.Groups["double"].Success ? a.Groups["double"] : a.Groups["single"];
                 int line = Line(tag.Index+a.Groups["key"].Index);
                 if ((element == "script" && key == "src") || (element == "link" && key == "href")) {
+                    Usage.Asset(path, line, value.Value);
                     foreach (Match m in Asset.Matches(value.Value))
                         Dependency(path, line, m.Groups["name"].Value, m.Groups["v"].Value);
                 }
@@ -128,7 +152,7 @@ sealed partial class FrontendScanner(Dictionary<string, FrontendRelease> release
                     string attr = key.Replace("data-", "data-bs-");
                     Issue(path, line, "Legacy Bootstrap "+key, "Bootstrap", key+"="+value.Value,
                         $"For Bootstrap 5, rename {key} to {attr}. Update related plugin attributes such as data-target to data-bs-target on this component.",
-                        "Exercise the component with mouse and keyboard. Confirm the intended target opens and closes.", BootstrapGuide);
+                        "Exercise the component with mouse and keyboard. Confirm the intended target opens and closes.", BootstrapGuide, new(a.Groups["key"].Value, attr));
                 }
                 if (key is "class" or "classname")
                     foreach (string token in value.Value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Distinct())
@@ -136,7 +160,7 @@ sealed partial class FrontendScanner(Dictionary<string, FrontendRelease> release
                             var next = token switch {"sr-only" => "visually-hidden", "sr-only-focusable" => "visually-hidden-focusable", "float-left" => "float-start", _ => "float-end"};
                             Issue(path, Line(tag.Index+value.Index+value.Value.IndexOf(token, StringComparison.Ordinal)), "Legacy Bootstrap class "+token, "Bootstrap", token,
                                 $"If this class comes from Bootstrap, migrate {token} to {next} for Bootstrap 5 and update any custom selectors.",
-                                "Check visibility, focus and alignment at the supported viewport widths.", BootstrapGuide);
+                                "Check visibility, focus and alignment at the supported viewport widths.", BootstrapGuide, new(token,next));
                         }
             }
             if (element == "script" && jsxCode == null) {
@@ -167,6 +191,7 @@ sealed partial class FrontendScanner(Dictionary<string, FrontendRelease> release
                 "Verify the loaded CSS and JS versions in the browser, then test dropdowns, modals and responsive layout.";
             foreach (var r in group)
             {
+                Usage.Package(r.Path, r.Line, name, r.Spec, group.Key.Scope);
                 string evidence = $"{name} {r.Spec}";
                 if (r.Exact != null && versions.Length > 1) {
                     string observed = string.Join(", ", versions.Take(12));

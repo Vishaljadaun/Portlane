@@ -5,6 +5,7 @@ sealed partial class FrontendScanner
 {
     void ReadManifest(string path, string file, string source)
     {
+        int first = references.Count;
         var bytes = Encoding.UTF8.GetBytes(source);
         try
         {
@@ -54,6 +55,8 @@ sealed partial class FrontendScanner
         }
         catch (JsonException)
         {
+            references.RemoveRange(first, references.Count-first);
+            badManifests.Add(path);
             Issue(path, 1, "Unreadable frontend manifest", "Frontend", file,
                 "Correct the manifest syntax and upload again to complete dependency analysis for this file.",
                 "Validate the JSON and confirm the dependency references appear in the new scan.", "https://www.json.org/json-en.html");

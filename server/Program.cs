@@ -68,4 +68,16 @@ api.MapPost("/scans/{id}/plan",async(string id,Planner planner,CancellationToken
         return Results.Problem("The provider could not return a complete plan. Check model settings, quotas and connectivity, then retry.",statusCode:503);
     }
 });
+api.MapPost("/scans/{id}/findings/{findingId}/review",async(string id,string findingId,Planner planner,CancellationToken ct)=>{
+    Scan? scan;
+    using (var db=Open()) {
+        using var cmd=db.CreateCommand();
+        cmd.CommandText="SELECT scan FROM reports WHERE id=$id";
+        cmd.Parameters.AddWithValue("$id",id);
+        scan=cmd.ExecuteScalar() is string json ? JsonSerializer.Deserialize<Scan>(json) : null;
+    }
+    var finding=scan?.Findings.FirstOrDefault(f=>f.Id==findingId);
+    if(scan==null || finding==null) return Results.NotFound();
+    return Results.Ok(await planner.Review(scan,finding,ct));
+});
 app.Run();

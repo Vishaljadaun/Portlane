@@ -1,0 +1,22 @@
+name: Verify deployed project-aware plans
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/verify-plans.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      PORTLANE_TEST_URL: https://portlane.onrender.com
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wake the free service
+        run: curl --fail --silent --show-error --retry 3 --max-time 90 "$PORTLANE_TEST_URL/api/provider"
+      - name: Verify new Groq plans on synthetic console and MVC projects
+        run: python3 tests/project-plans.py --live

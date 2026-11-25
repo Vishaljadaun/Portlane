@@ -6,6 +6,8 @@ using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions {Args=args, WebRootPath=Path.Combine(AppContext.BaseDirectory,"wwwroot")});
 builder.WebHost.ConfigureKestrel(k=>k.Limits.MaxRequestBodySize=12_000_000);
+builder.Services.AddSingleton<FrontendCatalog>();
+builder.Services.AddHttpClient("frontend-releases", c=>c.Timeout=TimeSpan.FromSeconds(2));
 builder.Services.AddHttpClient<Planner>(c=>c.Timeout=TimeSpan.FromSeconds(100));
 builder.Services.AddRateLimiter(o=>{
     o.RejectionStatusCode=429;
@@ -28,14 +30,14 @@ app.UseStaticFiles();
 app.UseRateLimiter();
 var api=app.MapGroup("/api").RequireRateLimiting("api");
 api.MapGet("/provider",(Planner p)=>new {p.Provider,p.Model});
-api.MapPost("/scans", async (HttpRequest request,CancellationToken ct)=>{
+api.MapPost("/scans", async (HttpRequest request,FrontendCatalog catalog,CancellationToken ct)=>{
     if(!request.HasFormContentType) return Results.BadRequest("Send a ZIP file.");
     try {
         var form=await request.ReadFormAsync(ct);
         var file=form.Files.GetFile("file");
         if(file is null || file.Length is 0 or > 10_000_000) return Results.BadRequest("Choose a ZIP smaller than 10 MB.");
         using var stream=file.OpenReadStream();
-        var scan=Scanner.Read(stream,Path.GetFileNameWithoutExtension(file.FileName));
+        var scan=Scanner.Read(stream,Path.GetFileNameWithoutExtension(file.FileName),await catalog.Get(ct));
         var id=Guid.NewGuid().ToString("N");
         using var db=Open(); using var cmd=db.CreateCommand();
         cmd.CommandText="INSERT INTO reports(id,scan) VALUES($id,$scan)";

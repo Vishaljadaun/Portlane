@@ -63,6 +63,60 @@ def inventory():
         z.writestr("InventoryTracker.Tests/TestRunner.cs", "class Runner { static void Main() {} }")
     return out.getvalue()
 
+def frontend():
+    files = {
+        "Shop/Web.csproj": "<Project/>",
+        "Shop/package.json": '{"dependencies":{"bootstrap":"5.0.0","jquery":"^3.7.1"},"description":"bootstrap"}',
+        "Shop/package-lock.json": '{"packages":{"node_modules/jquery":{"version":"3.7.1"}}}',
+        "Shop/Views/_Layout.cshtml": """<link href="/bootstrap/4.6.2/css/bootstrap.min.css" rel="stylesheet">
+<button
+ data-toggle="modal" data-target="#cart">Cart</button>
+<script>
+const count = $('.cart').size();
+</script>""",
+        "Shop/Scripts/cart.js": """// $.now()
+const message = "$.parseJSON(payload)";
+const stamp = $.now();
+const label = name.substr(1, 3);
+function setup() { $('#cart').bind('click', openCart); }""",
+        "Shop/libman.json": '{"libraries":[{"library":"bootstrap@4.6.2"}]}',
+        "Shop/Content/jquery-1.12.4.min.js": "/* vendor */",
+        "Shop/node_modules/a/bad.js": "$.trim(value)",
+        "Other/package.json": '{"dependencies":{"bootstrap":"3.4.1"}}',
+        "Other/modern.js": "const value = Date.now();",
+    }
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as z:
+        for name, body in files.items():
+            z.writestr(name, body)
+    result = scan(out.getvalue())
+    report = result["scan"]
+    assert report["files"] == 9, report
+    items = report["findings"]
+    hits = {(f["path"],f["line"],f["title"]) for f in items}
+    for item in [
+        ("Shop/Views/_Layout.cshtml", 3, "Legacy Bootstrap data-toggle"),
+        ("Shop/Views/_Layout.cshtml", 5, "Legacy jQuery size()"),
+        ("Shop/Scripts/cart.js", 3, "Legacy jQuery now()"),
+        ("Shop/Scripts/cart.js", 4, "Review JavaScript substr()"),
+        ("Shop/Scripts/cart.js", 5, "Legacy jQuery bind()"),
+        ("Shop/package-lock.json", 1, "Upgrade jQuery 3.7.1"),
+        ("Shop/package.json", 1, "Verify jQuery dependency declaration"),
+        ("Shop/libman.json", 1, "Multiple Bootstrap versions referenced"),
+        ("Shop/Views/_Layout.cshtml", 1, "Multiple Bootstrap versions referenced"),
+        ("Shop/Content/jquery-1.12.4.min.js", 1, "Upgrade jQuery 1.12.4"),
+    ]:
+        assert item in hits, (item, hits)
+    assert all("parseJSON" not in f["title"] and "trim()" not in f["title"] for f in items)
+    assert all("Multiple" not in f["title"] for f in items if f["path"].startswith("Other/"))
+    assert all(f["upgrade"]["guide"].startswith("https://") and f["upgrade"]["verify"] for f in items)
+    print(f"Frontend ZIP: {report['files']} files, {len(items)} findings. Mixed versions, source lines, upgrade guidance and independent project scope verified.")
+    return result
+
+if "--frontend-only" in sys.argv:
+    frontend()
+    sys.exit(0)
+
 if not live:
     stub = HTTPServer(("127.0.0.1",11434), Provider)
     threading.Thread(target=stub.serve_forever, daemon=True).start()
@@ -79,6 +133,8 @@ assert store["scan"]["projects"][0]["kind"] == "MVC web application"
 web_plan = json.dumps(plan(store)).lower()
 assert "mvc" in web_plan and "session" in web_plan and "razor" not in web_plan
 if not live:
-    assert len(requests_seen) == 2
+    frontend_plan = plan(frontend())
+    assert any('data-bs-toggle' in p['action'] for p in frontend_plan)
+    assert len(requests_seen) == 3
     stub.shutdown()
 print("Storefront fixture: MVC and session tasks present, unsupported instructions excluded.")

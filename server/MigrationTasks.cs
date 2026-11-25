@@ -6,7 +6,7 @@ static class MigrationTasks
     {
         var projects = (scan.Projects ?? []).ToDictionary(p => p.Path, p => p.Kind);
         var tasks = new List<MigrationTask>();
-        foreach (var group in scan.Findings.GroupBy(f => (f.Project, f.Title)))
+        foreach (var group in scan.Findings.GroupBy(f => (Project: f.Project ?? (f.Upgrade == null ? null : f.Path), f.Title, f.Upgrade)))
         {
             var project = group.Key.Project;
             var kind = project != null && projects.TryGetValue(project, out var value) ? value : "Unknown";
@@ -25,6 +25,12 @@ static class MigrationTasks
                 "Library" => "Build its dependent projects and exercise the library through its callers.",
                 _ => "Run existing behavior checks for the project."
             };
+            if (group.Key.Upgrade is {} upgrade)
+            {
+                tasks.Add(new($"T{tasks.Count+1}", project!, kind, $"{scope} · {group.Key.Title}", upgrade.Action,
+                    [upgrade.Verify, upgrade.Verify], group.Select(f => f.Id).ToArray()));
+                continue;
+            }
             var keys = group.Select(f => f.Subject).OfType<string>().Distinct().ToArray();
             var settings = keys.Length == 0 ? "the referenced settings" : string.Join(", ", keys);
             var (title, action, check, other) = group.Key.Title switch {

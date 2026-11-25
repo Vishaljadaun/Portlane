@@ -13,7 +13,7 @@ jobs:
         shell: bash
         run: |
           set -eu
-          dotnet /tmp/portlane/Portlane.dll --urls http://127.0.0.1:5100 > /tmp/portlane.log 2>&1 &
+          Frontend__Offline=true dotnet /tmp/portlane/Portlane.dll --urls http://127.0.0.1:5100 > /tmp/portlane.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid" || true; cat /tmp/portlane.log' EXIT
           curl --retry 20 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:5100/ | grep Portlane

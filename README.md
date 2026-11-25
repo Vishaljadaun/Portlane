@@ -27,5 +27,14 @@ The scanner associates findings with their nearest project and infers project ro
 
 GitHub Actions publishes the .NET application and smoke-tests the React entry point and scanner on pushes and pull requests.
 
+## Frontend migration findings
+Upload the solution with its frontend source. Findings include an evidence location, a suggested change, a verification step and a documentation link. All four are available before generating an AI plan and in the JSON export.
+
+Portlane reads JavaScript and TypeScript, HTML, Razor and Web Forms views, npm manifests and npm lockfiles, Bower, LibMan, NuGet declarations, versioned asset paths and recognizable jQuery or Bootstrap distribution banners. It compares exact versions within the nearest npm package or .NET project. A range is a declaration to verify. Multiple versions in one scope warrant checking which scripts and styles actually load together.
+
+The server checks the public npm stable tags for jQuery and Bootstrap up to once every six hours. The finding identifies the reference version and its source. A reviewed release baseline works offline. Set `Frontend__Offline=true` for deterministic offline scans.
+
+Usage rules cover selected jQuery event and utility calls, JavaScript substr candidates and common Bootstrap 5 markup changes. These static checks cannot resolve every alias, template expression or runtime plugin. Dependency directories are excluded. Vendor assets supply version evidence where recognizable. Existing ZIP, source and finding limits apply. A browser run of affected pages remains part of verifying an upgrade.
+
 ## Frontend dependencies
 React and ReactDOM 18.3.1 (MIT) and HTM 3.1.1 (Apache-2.0) are bundled under web/vendor. The frontend runs without an npm install or runtime CDN.

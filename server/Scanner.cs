@@ -4,7 +4,7 @@ using System.Xml.Linq;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-record Finding(string Id, string Title, string Category, string Path, int Line, string Excerpt, string? Project = null, string? Subject = null);
+record Finding(string Id, string Title, string Category, string Path, int Line, string Excerpt, string? Project = null, string? Subject = null, Upgrade? Upgrade = null);
 record Scan(string Name, int Files, List<Finding> Findings, List<ProjectInfo>? Projects = null);
 record ProjectInfo(string Path, string Kind);
 
@@ -12,7 +12,7 @@ class ScanLimitException(string message) : Exception(message) { }
 
 static class Scanner
 {
-    public static Scan Read(Stream stream, string name)
+    public static Scan Read(Stream stream, string name, Dictionary<string, FrontendRelease> releases)
     {
         using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
         if (archive.Entries.Count > 1500) throw new ScanLimitException("Limit the archive to 1,500 entries.");
@@ -20,6 +20,7 @@ static class Scanner
         var projects = new List<ProjectInfo>();
         var entryPoints = new HashSet<string>();
         var mvcFiles = new HashSet<string>();
+        var frontend = new FrontendScanner(releases);
         int files = 0;
         long total = 0;
         foreach (var entry in archive.Entries.OrderBy(e => e.FullName, StringComparer.Ordinal))
@@ -28,7 +29,8 @@ static class Scanner
             if (path.Split('/').Any(p => p is "bin" or "obj" or ".git" or "packages" or "node_modules")) continue;
             string ext = Path.GetExtension(path).ToLowerInvariant();
             string file = Path.GetFileName(path).ToLowerInvariant();
-            if (ext is not (".cs" or ".csproj") && file is not ("web.config" or "packages.config")) continue;
+            bool web = FrontendScanner.Supports(file, ext);
+            if (!web && ext is not (".cs" or ".csproj") && file is not ("web.config" or "packages.config")) continue;
             total += entry.Length;
             if (entry.Length > 512_000 || total > 8_000_000) throw new ScanLimitException("Source limit exceeded (512 KB per file, 8 MB total).");
             using var input = entry.Open();
@@ -51,7 +53,8 @@ static class Scanner
                 var excerpt = safeExcerpt ?? lines[line-1].Trim();
                 findings.Add(new($"F{findings.Count+1:D3}", title, category, path, line, excerpt[..Math.Min(excerpt.Length, 240)], Subject: subject));
             }
-            if (ext == ".cs")
+            if (web) frontend.Inspect(path, file, ext, string.Join("\n", lines));
+            else if (ext == ".cs")
             {
                 var root = CSharpSyntaxTree.ParseText(source).GetRoot();
                 foreach (var node in root.DescendantNodes())
@@ -87,12 +90,14 @@ static class Scanner
                     var tag = el.Name.LocalName;
                     var line = ((IXmlLineInfo)el).LineNumber;
                     if (tag == "package" && file == "packages.config") Add("Legacy package reference", "Packages", line, $"{el.Attribute("id")?.Value} {el.Attribute("version")?.Value}");
+                    if (tag is "package" or "PackageReference")
+                        frontend.Dependency(path, line, el.Attribute("id")?.Value ?? el.Attribute("Include")?.Value, el.Attribute("version")?.Value ?? el.Attribute("Version")?.Value ?? el.Element("Version")?.Value);
                     if (tag == "sessionState") Add("Session configuration", "State", line, "<sessionState … />");
                     if (tag == "TargetFrameworkVersion") Add("Legacy project target", "Framework", line, el.Value);
                 }
             }
         }
-        if (files == 0) throw new ScanLimitException("No supported C# or project files found.");
+        if (files == 0) throw new ScanLimitException("No supported .NET or frontend source files found.");
         // Use the nearest project directory. Keep ambiguous ownership explicit.
         var directories = projects.GroupBy(p => Path.GetDirectoryName(p.Path) ?? "", StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.Count() == 1 ? g.First().Path : null, StringComparer.OrdinalIgnoreCase);
@@ -116,6 +121,11 @@ static class Scanner
                 projects[i] = p with {Kind = "MVC web application"};
             else if (p.Kind == "Unknown" && mainProjects.Contains(p.Path))
                 projects[i] = p with {Kind = "Console application"};
+        }
+        foreach (var item in frontend.Complete(Owner))
+        {
+            if (findings.Count >= 300) throw new ScanLimitException("More than 300 findings. Upload a smaller project.");
+            findings.Add(item with {Id = $"F{findings.Count+1:D3}"});
         }
         return new(name, files, findings.Select(f => f with {Project = Owner(f.Path)}).ToList(), projects);
     }

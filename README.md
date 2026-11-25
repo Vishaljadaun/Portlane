@@ -38,3 +38,13 @@ Usage rules cover selected jQuery event and utility calls, JavaScript substr can
 
 ## Frontend dependencies
 React and ReactDOM 18.3.1 (MIT) and HTM 3.1.1 (Apache-2.0) are bundled under web/vendor. The frontend runs without an npm install or runtime CDN.
+
+## Reviewing and comparing scans
+
+Coverage lists each archive file with a reason for its status. Limited files include vendor assets checked for version metadata and C# files with syntax errors. Oversized files and entries beyond the source budget appear as skipped. Unreadable files remain visible. Archive and finding count limits still apply.
+
+Findings have impact, confidence and a rationale. In Dependencies, follow literal Razor layouts, partials, script or style bundles, local assets and scoped package references. MVC view-start conventions and unresolved targets are labeled. Dynamic references, multi-step bundle registration and runtime loading require manual inspection.
+
+Upload a baseline, choose **Compare revised ZIP** and keep the same internal folder structure. Comparison uses rule evidence, project, file and a hash of the original source line. The page tracks the current comparison until refresh. Missing or incompletely scanned files yield unverified findings. Export the report to retain the comparison.
+
+**Explain and preview fix** sends one finding's rule, location, approved replacement fragment, verification guidance and relationship labels to the configured provider. Portlane shows the provider's explanation and assumptions alongside a rule-backed fragment for supported edits. With insufficient edit evidence it requests more context. With an unavailable provider it displays rule guidance. The preview leaves uploaded code untouched.

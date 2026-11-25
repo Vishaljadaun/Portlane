@@ -19,4 +19,5 @@ jobs:
           curl --retry 20 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:5100/ | grep Portlane
           curl -fsS -F file=@web/storefront.zip http://127.0.0.1:5100/api/scans | jq -e '.scan.files == 4 and (.scan.findings | length == 6)'
           curl -fsS -F file=@web/frontend-example.zip http://127.0.0.1:5100/api/scans | jq -e '.scan.files == 3 and (.scan.findings | length == 9)'
+          node tests/compare.cjs
           python3 tests/project-plans.py

@@ -11,7 +11,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 9
     env:
       SITE: https://portlane.onrender.com
     steps:
@@ -32,7 +32,14 @@ jobs:
           curl --fail --silent --show-error -F file=@/tmp/frontend.zip "$SITE/api/scans" |
             jq -e '.scan as $s | $s.files == 3 and ([$s.findings[].title] | index("Legacy jQuery size()") != null and index("Multiple Bootstrap versions referenced") != null) and all($s.findings[]; .upgrade.verify and .upgrade.guide)'
           PORTLANE_TEST_URL="$SITE" python3 tests/project-plans.py --frontend-only
-      - name: Test ZIP selection in mobile Chromium
+      - name: Verify the deployed review and dependency map
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl -fsS "$SITE/review.js" | grep -q 'function compareScans'; then break; fi
+            sleep 5
+          done
+          PORTLANE_TEST_URL="$SITE" python3 tests/project-plans.py --live --review-only
+      - name: Test scan comparison and finding review in mobile Chromium
         run: |
           npm install --prefix "$RUNNER_TEMP/browser" --no-audit --no-fund playwright-core@1.57.0
           NODE_PATH="$RUNNER_TEMP/browser/node_modules" node tests/upload-browser.cjs

@@ -1,0 +1,12 @@
+const assert = require('node:assert/strict');
+const vm = require('node:vm');
+const fs = require('node:fs');
+const compare = vm.runInNewContext(fs.readFileSync('web/review.js','utf8')+'\ncompareScans');
+const finding = (path,context,line) => ({project:'Shop.csproj',path,title:'Legacy jQuery size()',excerpt:'size()',category:'jQuery',context,line});
+const before = {findings:[finding('A.js','abc',4),finding('A.js','def',8),finding('B.js','g',3),finding('C.js','h',3),finding('D.js','i',1)]};
+const after = {findings:[finding('A.js','def',12),finding('E.js','new',1)],coverage:['A.js','B.js','C.js','E.js'].map(path=>({path,status:path==='C.js'?'Unreadable':'Analyzed'}))};
+const changes = compare(before,after);
+assert.equal(changes.filter(c=>c.status==='Resolved').length,2);
+assert.equal(changes.find(c=>c.status==='Still present').previous.context,'def');
+assert.equal(changes.filter(c=>c.status==='Unverified').length,2);
+assert.equal(changes.filter(c=>c.status==='New').length,1);

@@ -6,3 +6,10 @@
 .upload-control:focus-within{outline:3px solid white;outline-offset:3px}
 .sample-control{border:1px solid #9dbcb4;border-radius:8px;background:transparent;color:white;padding:9px 14px;font-weight:600}
 .actions+small{display:block;color:#bdd5ce;margin-top:8px}
+
+.report-panel,.review,.triage{background:white;border:1px solid #d6e3df;border-radius:12px;padding:1rem;margin-block:1rem;overflow-wrap:anywhere}
+.report-panel h2,.review h3{margin-top:0}.report-scroll{max-height:58vh;overflow:auto}
+.report-line{display:grid;gap:.35rem;padding:.75rem 0;border-bottom:1px solid #dfe8e5}.report-line span{font-size:.86rem;color:#425955}
+.pills,nav{display:flex;flex-wrap:wrap;gap:.35rem}.pills button,.review button,.compare{border:1px solid #8daaa2;border-radius:7px;background:#f2faf6;color:#173e36;padding:.45rem .7rem;cursor:pointer}
+.pills [aria-pressed=true]{background:#174e43;color:white}.compare{display:inline-block;position:relative;margin-block:.5rem}.path-btn{background:transparent;color:#146257;text-align:left;text-decoration:underline;border:0;overflow-wrap:anywhere;justify-self:start;cursor:pointer;padding:0}
+.diff{white-space:pre-wrap}.diff del,.diff ins{display:block;padding:.3rem;text-decoration:none}.diff del{background:#ffebe7;color:#682e22}.diff ins{background:#def5e9;color:#145b42}

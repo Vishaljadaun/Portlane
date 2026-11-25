@@ -22,15 +22,20 @@ function App() {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [provider, setProvider] = useState(null);
+  const [comparison,setComparison] = useState(null);
+  const [reviews,setReviews] = useState({});
+  const review = reviews[id+'/'+selected?.id];
   const [notice, setNotice] = useState('');
   useEffect(()=>{api('/api/provider').then(setProvider).catch(()=>{});},[]);
   const findings = scan.findings.filter(f=>(filter==='All categories' || f.category===filter) &&
     (f.path+' '+f.title+' '+f.id).toLowerCase().includes(search.toLowerCase()));
+  const priority = {High:0, Medium:1, Low:2};
+  findings.sort((a,b)=>(priority[a.assessment?.impact] ?? 3)-(priority[b.assessment?.impact] ?? 3));
   function inspect(f) {
     select(f); setSearch(''); setFilter('All categories'); setTab('Findings');
     requestAnimationFrame(()=>document.getElementById('evidence')?.scrollIntoView({block:'nearest'}));
   }
-  async function scanZip(file) {
+  async function scanZip(file, compare=false) {
     setError(''); setNotice('');
     if (file && (!file.size || file.size > 10000000)) {
       setError('Choose a nonempty ZIP up to 10 MB. Exclude bin, obj, packages and node_modules when creating it.'); return;
@@ -45,15 +50,25 @@ function App() {
       const form=new FormData(); form.append('file',file);
       const result=await api('/api/scans',{method:'POST',body:form});
       setNotice('Scanned ' + file.name + ' · ' + result.scan.files + ' source files · ' + result.scan.findings.length + ' findings');
-      setScan(result.scan);setId(result.id);setPlan(null);select(result.scan.findings[0]);setTab('Findings');setFilter('All categories');setSearch('');
+      setComparison(compare ? {before:scan.name,after:result.scan.name,rows:compareScans(scan,result.scan)} : null);
+      setReviews({});
+      setScan(result.scan);setId(result.id);setPlan(null);select(result.scan.findings[0]);setTab(compare?'Changes':'Findings');setFilter('All categories');setSearch('');
     } catch(e){setError(e.message);} finally{setBusy('');}
   }
   async function generate(){
     setBusy('Generating plan…');setError('');
     try{setPlan(await api('/api/scans/'+id+'/plan',{method:'POST'}));}catch(e){setError(e.message);}finally{setBusy('');}
   }
+  async function explainFinding(){
+    const key=id+'/'+selected.id;
+    setBusy('Reviewing finding…');setError('');
+    try {
+      const result=await api('/api/scans/'+id+'/findings/'+selected.id+'/review',{method:'POST'});
+      setReviews(old=>({...old,[key]:result}));
+    } catch(e){setError(e.message);} finally{setBusy('');}
+  }
   function exportPlan(){
-    const blob=new Blob([JSON.stringify({project:scan.name,findings:scan.findings,plan},null,2)],{type:'application/json'});
+    const blob=new Blob([JSON.stringify({project:scan.name,findings:scan.findings,coverage:scan.coverage,usage:scan.usage,comparison,reviews,plan},null,2)],{type:'application/json'});
     const url=URL.createObjectURL(blob), a=document.createElement('a');a.href=url;a.download=scan.name+'-migration.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
   return html`<header><div className="brand"><i className="mark" aria-hidden="true"></i>Portlane</div><span className="headerline"></span><span>Migration workspace</span><div className="provider">${provider?provider.provider:'Sample workspace'}</div></header>
@@ -61,9 +76,16 @@ function App() {
   ${(busy || error || notice) && html`<div role="status" className="notice">${busy || error || notice}</div>`}
   <section className="summary"><div><p className="eyebrow">${id?'PROJECT':'SAMPLE PROJECT'}</p><h2>${scan.name}</h2></div><div><span>Source files</span><strong>${scan.files}</strong></div><div><span>Findings</span><strong>${scan.findings.length}</strong></div><div><span>Migration target</span><strong>.NET 10</strong></div></section>
   ${scan.projects?.length > 0 && html`<section aria-label="Detected projects"><b>Detected projects</b><ul>${scan.projects.map(p=>html`<li key=${p.path}>${p.path} · ${p.kind}</li>`)}</ul></section>`}
-  <nav aria-label="Report views">${['Findings','Migration plan'].map(t=>html`<button key=${t} aria-pressed=${t===tab} onClick=${()=>setTab(t)}>${t}</button>`)}<button className="export" onClick=${exportPlan}>Export report ↓</button></nav>
-  ${tab==='Findings'?html`<section className="split"><article><div className="heading"><h2>Source findings</h2><span className="number">${findings.length}</span></div><div className="filters"><input aria-label="Search findings" placeholder="Search findings or files" value=${search} onInput=${e=>setSearch(e.target.value)}/><select aria-label="Filter by category" value=${filter} onChange=${e=>setFilter(e.target.value)}>${['All categories',...new Set(scan.findings.map(f=>f.category))].map(c=>html`<option key=${c}>${c}</option>`)}</select></div><div className="list">${findings.map(f=>html`<button className=${'row '+(selected?.id===f.id?'current':'')} key=${f.id} onClick=${()=>select(f)}><span className="glyph" aria-hidden="true">${f.category==='Configuration'?'⚙':'{ }'}</span><span><b>${f.title}</b><small>${f.path} · L${f.line}</small></span><em>${f.category}</em></button>`)}${!findings.length && html`<p>No matching findings.</p>`}</div></article>
-  <aside id="evidence"><p className="eyebrow">SOURCE EVIDENCE</p>${selected?html`<h2>${selected.title}</h2><p className="file">${selected.path}</p><div className="code"><span>LINE ${selected.line}</span><pre>${selected.excerpt}</pre></div>${selected.upgrade && html`<section className="upgrade"><h3>Suggested upgrade</h3><p>${selected.upgrade.action}</p><p><b>Verify</b> · ${selected.upgrade.verify}</p><a href=${selected.upgrade.guide} target="_blank" rel="noopener noreferrer">Read migration guidance ↗</a></section>`}<div className="meta"><span>Rule category</span><b>${selected.category}</b></div><div className="meta"><span>Evidence ID</span><code>${selected.id}</code></div>`:html`<p>No source evidence available.</p>`}</aside></section>`
+  ${id && html`<label className="compare upload-control">Compare revised ZIP<input type="file" aria-label="Compare revised ZIP" disabled=${!!busy} onChange=${e=>{const f=e.target.files[0];e.target.value='';if(f)scanZip(f,true);}}/></label>`}
+  <nav aria-label="Report views">${['Findings','Migration plan',...(scan.coverage?['Coverage','Dependencies','Changes']:[])].map(t=>html`<button key=${t} aria-pressed=${t===tab} onClick=${()=>setTab(t)}>${t}</button>`)}<button className="export" onClick=${exportPlan}>Export report ↓</button></nav>
+  ${tab==='Findings'?html`<section className="split"><article><div className="heading"><h2>Source findings</h2><span className="number">${findings.length}</span></div><div className="filters"><input aria-label="Search findings" placeholder="Search findings or files" value=${search} onInput=${e=>setSearch(e.target.value)}/><select aria-label="Filter by category" value=${filter} onChange=${e=>setFilter(e.target.value)}>${['All categories',...new Set(scan.findings.map(f=>f.category))].map(c=>html`<option key=${c}>${c}</option>`)}</select></div><div className="list">${findings.map(f=>html`<button className=${'row '+(selected?.id===f.id?'current':'')} key=${f.id} onClick=${()=>select(f)}><span className="glyph" aria-hidden="true">${f.category==='Configuration'?'⚙':'{ }'}</span><span><b>${f.title}</b><small>${f.path} · L${f.line}</small></span><em>${f.assessment ? f.assessment.impact+' impact' : f.category}</em></button>`)}${!findings.length && html`<p>No matching findings.</p>`}</div></article>
+  <aside id="evidence"><p className="eyebrow">SOURCE EVIDENCE</p>${selected?html`<h2>${selected.title}</h2><p className="file">${selected.path}</p><div className="code"><span>LINE ${selected.line}</span><pre>${selected.excerpt}</pre></div>${selected.upgrade && html`<section className="upgrade"><h3>Suggested upgrade</h3><p>${selected.upgrade.action}</p><p><b>Verify</b> · ${selected.upgrade.verify}</p><a href=${selected.upgrade.guide} target="_blank" rel="noopener noreferrer">Read migration guidance ↗</a></section>`}${selected.assessment && html`<div className="triage"><b>${selected.assessment.impact} impact · ${selected.assessment.confidence} confidence</b><p>${selected.assessment.reason}</p></div>`}
+    ${id && html`<section className="review"><h3>Finding review</h3>${!review ? html`<p>The provider receives the rule, location, suggested edit and verification guidance.</p><button disabled=${!!busy} onClick=${explainFinding}>Explain and preview fix</button>` : html`<small>${review.source}</small><p>${review.explanation}</p><p><b>Check first</b> · ${review.assumption}</p>
+    ${review.edit ? html`<pre className="diff"><del>− ${review.edit.before}</del><ins>+ ${review.edit.after}</ins></pre>` : html`<p>A specific edit needs more evidence at this call site.</p>`}<p><b>Verify</b> · ${review.verify}</p>`}</section>`}
+    <div className="meta"><span>Rule category</span><b>${selected.category}</b></div><div className="meta"><span>Evidence ID</span><code>${selected.id}</code></div>`:html`<p>No source evidence available.</p>`}</aside></section>`
+  :tab==='Coverage'?html`<${CoverageView} files=${scan.coverage}/>`
+  :tab==='Dependencies'?html`<${UsageView} map=${scan.usage}/>`
+  :tab==='Changes'?html`<${ChangesView} comparison=${comparison} inspect=${inspect}/>`
   :html`<section className="plan"><div className="heading"><h2>${id?'Migration plan':'Example migration plan'}</h2></div>${plan?plan.phases.map((p,i)=>html`<article key=${i}><p className="eyebrow">PHASE ${i+1}</p><h3>${p.title}</h3><p>${p.action}</p><p><b>Verify</b> · ${p.test}</p>${p.evidence.map(e=>html`<button className="chip" key=${e} onClick=${()=>inspect(scan.findings.find(f=>f.id===e))}>${e}</button>`)}</article>`):html`<p>Generate ordered migration steps and verification checks from your scan.</p><p className="file">${provider?.provider==='Groq'?'Groq receives project roles and paths, evidence IDs, and candidate tasks and checks. These can include configuration key names.':'Generation uses the AI provider configured on the server.'}</p><button className="primary" disabled=${!!busy || !scan.findings.length} onClick=${generate}>Generate migration plan</button>`}${plan && !plan.phases.length && html`<p>No migration steps for this scan.</p>`}</section>`}
   </main><footer>Portlane <span> .NET migration workspace</span></footer>`;
 }

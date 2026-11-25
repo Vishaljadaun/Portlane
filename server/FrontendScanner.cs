@@ -21,13 +21,14 @@ sealed partial class FrontendScanner(Dictionary<string, FrontendRelease> release
     static Regex Pattern(string value, bool ignoreCase = false) => new(value,
         RegexOptions.CultureInvariant | RegexOptions.NonBacktracking | (ignoreCase ? RegexOptions.IgnoreCase : RegexOptions.None));
 
-    static readonly Regex Asset = Pattern(@"(?:^|[/@])(?<name>bootstrap|jquery)(?:[/@-]|/v)(?:v)?(?<v>[0-9]+\.[0-9]+\.[0-9]+)(?:/|(?:\.slim|\.bundle|\.min)*\.(?:js|css)(?:[?#]|$))", true);
+    static readonly Regex Asset = Pattern(@"(?:^|[/@])(?:twitter-)?(?<name>bootstrap|jquery)(?:[/@-]|/v)(?:v)?(?<v>[0-9]+\.[0-9]+\.[0-9]+)(?:/|(?:\.slim|\.bundle|\.min)*\.(?:js|css)(?:[?#]|$))", true);
     static readonly Regex Banner = Pattern(@"/\*![\s*]*(?<name>jQuery(?: JavaScript Library)?|Bootstrap)\s+v?(?<v>[0-9]+\.[0-9]+\.[0-9]+)(?:\s|[|*])", true);
     static readonly Regex Tag = Pattern("""<(?<tag>[A-Za-z][\w:-]*)(?:[^<>"']|"[^"]*"|'[^']*')*>""");
     static readonly Regex Attribute = Pattern("""\s+(?<key>[\w:-]+)\s*=\s*(?:"(?<double>[^"]*)"|'(?<single>[^']*)')""");
     static readonly Regex MaskMarkup = Pattern(@"<!--[\s\S]*?-->|@\*[\s\S]*?\*@|<%--[\s\S]*?--%>");
     static readonly Regex MaskJs = Pattern("""//[^\n]*|/\*[\s\S]*?\*/|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`""");
     static readonly Regex Calls = Pattern(@"(?:^|[^\w$.])(?:jQuery|\$)\s*(?:\.\s*(?<api>trim|parseJSON|now)\s*\(|\([^()\n]*\)\s*\.\s*(?<api>size|bind|unbind|live|die)\s*\()|\.\s*(?<api>substr)\s*\(");
+    static readonly Regex BrowserApi = Pattern(@"(?:^|[^\w$.])(?:(?:window\s*\.\s*)?document\s*\.\s*(?<write>write)\s*\(|(?:event|evt|e)\s*\.\s*(?<key>keyCode)\b)");
     static string Blank(Match m) => Regex.Replace(m.Value, @"[^\n]", " ");
     static readonly HashSet<string> Widgets = ["modal","collapse","dropdown","tab","pill","tooltip","popover","button","buttons","carousel","alert"];
 
@@ -74,7 +75,19 @@ sealed partial class FrontendScanner(Dictionary<string, FrontendRelease> release
         if (vendor || ext == ".css") return;
         void ReadScript(string script, int offset)
         {
-            foreach (Match m in Calls.Matches(MaskJs.Replace(script, Blank))) {
+            string code = MaskJs.Replace(script, Blank);
+            foreach (Match m in BrowserApi.Matches(code)) {
+                bool write = m.Groups["write"].Success;
+                var symbol = write ? m.Groups["write"] : m.Groups["key"];
+                Issue(path, Line(offset+symbol.Index), write ? "Deprecated document.write()" : "Review keyboard event keyCode", "JavaScript",
+                    write ? "document.write()" : "keyCode",
+                    write ? "Create the required DOM elements and insert them into a known container. Assign plain text with textContent." :
+                        "Confirm the receiver is a KeyboardEvent. Use event.key for the interpreted key or event.code for the physical key.",
+                    write ? "Check where and when the content appears, both during page load and after load." :
+                        "Exercise keyboard shortcuts on supported layouts and with modifier keys.",
+                    write ? "https://developer.mozilla.org/en-US/docs/Web/API/Document/write" : "https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent/keyCode");
+            }
+            foreach (Match m in Calls.Matches(code)) {
                 var api = m.Groups["api"];
                 var (action, verify) = api.Value switch {
                     "size" => ("Replace the jQuery collection’s .size() call with its .length property.", "Compare counts for zero, one and several matches."),
@@ -90,12 +103,17 @@ sealed partial class FrontendScanner(Dictionary<string, FrontendRelease> release
                     script.Substring(api.Index, api.Length)+"()", action, verify, js ? JsGuide : JQueryGuide);
             }
         }
-        if (Scripts.Contains(ext)) { ReadScript(source, 0); return; }
+        string? jsxCode = null;
+        if (Scripts.Contains(ext)) {
+            ReadScript(source, 0);
+            if (ext is not (".jsx" or ".tsx")) return;
+            jsxCode = MaskJs.Replace(source, Blank);
+        }
         string markup = MaskMarkup.Replace(source, Blank);
         int afterScript = 0;
         foreach (Match tag in Tag.Matches(markup))
         {
-            if (tag.Index < afterScript) continue;
+            if (tag.Index < afterScript || (jsxCode != null && jsxCode[tag.Index] != '<')) continue;
             var element = tag.Groups["tag"].Value.ToLowerInvariant();
             foreach (Match a in Attribute.Matches(tag.Value))
             {
@@ -121,7 +139,7 @@ sealed partial class FrontendScanner(Dictionary<string, FrontendRelease> release
                                 "Check visibility, focus and alignment at the supported viewport widths.", BootstrapGuide);
                         }
             }
-            if (element == "script") {
+            if (element == "script" && jsxCode == null) {
                 int start = tag.Index + tag.Length;
                 int end = markup.IndexOf("</script", start, StringComparison.OrdinalIgnoreCase);
                 if (end >= 0) { ReadScript(markup[start..end], start); afterScript = end; }

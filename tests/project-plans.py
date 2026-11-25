@@ -83,6 +83,9 @@ function setup() { $('#cart').bind('click', openCart); }""",
         "Shop/Content/jquery-1.12.4.min.js": "/* vendor */",
         "Shop/node_modules/a/bad.js": "$.trim(value)",
         "Other/package.json": '{"dependencies":{"bootstrap":"3.4.1"}}',
+        "Shop/Cart.tsx": """// const ignored = '<div className="sr-only">';
+export const Cart = () => <span className="sr-only">Cart</span>;""",
+        "Shop/keys.js": "if (event.keyCode === 13) document.write('Ready');",
         "Other/modern.js": "const value = Date.now();",
     }
     out = io.BytesIO()
@@ -91,11 +94,14 @@ function setup() { $('#cart').bind('click', openCart); }""",
             z.writestr(name, body)
     result = scan(out.getvalue())
     report = result["scan"]
-    assert report["files"] == 9, report
+    assert report["files"] == 11, report
     items = report["findings"]
     hits = {(f["path"],f["line"],f["title"]) for f in items}
     for item in [
         ("Shop/Views/_Layout.cshtml", 3, "Legacy Bootstrap data-toggle"),
+        ("Shop/Cart.tsx", 2, "Legacy Bootstrap class sr-only"),
+        ("Shop/keys.js", 1, "Review keyboard event keyCode"),
+        ("Shop/keys.js", 1, "Deprecated document.write()"),
         ("Shop/Views/_Layout.cshtml", 5, "Legacy jQuery size()"),
         ("Shop/Scripts/cart.js", 3, "Legacy jQuery now()"),
         ("Shop/Scripts/cart.js", 4, "Review JavaScript substr()"),
@@ -107,6 +113,7 @@ function setup() { $('#cart').bind('click', openCart); }""",
         ("Shop/Content/jquery-1.12.4.min.js", 1, "Upgrade jQuery 1.12.4"),
     ]:
         assert item in hits, (item, hits)
+    assert ("Shop/Cart.tsx", 1, "Legacy Bootstrap class sr-only") not in hits
     assert all("parseJSON" not in f["title"] and "trim()" not in f["title"] for f in items)
     assert all("Multiple" not in f["title"] for f in items if f["path"].startswith("Other/"))
     assert all(f["upgrade"]["guide"].startswith("https://") and f["upgrade"]["verify"] for f in items)
